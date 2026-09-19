@@ -1,12 +1,11 @@
-"""Lightweight polling orchestration for data-platform health signals."""
+"""Provider-agnostic monitoring orchestration."""
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Protocol
+from typing import Any
 
-
-class ObservationSource(Protocol):
-    def collect(self) -> dict[str, Any]: ...
+from src.models.pipeline_run import PipelineRun
+from src.providers.base import PipelineProvider
 
 
 @dataclass(frozen=True)
@@ -19,14 +18,15 @@ class Observation:
 
 
 class GuardianScout:
-    """Collect observations without embedding vendor-specific logic."""
+    """Consume any PipelineProvider without knowing its data source."""
 
-    def __init__(self, source: ObservationSource) -> None:
-        self.source = source
+    def __init__(self, provider: PipelineProvider) -> None:
+        self.provider = provider
+
+    def collect_runs(self) -> list[PipelineRun]:
+        return self.provider.get_pipeline_runs()
 
     def run(self) -> list[Observation]:
-        payload = self.source.collect()
-        return [
-            Observation(name, float(signal["value"]), float(signal["threshold"]), metadata=dict(signal.get("metadata", {})))
-            for name, signal in payload.items()
-        ]
+        runs = self.collect_runs()
+        failed = sum(run.status == "Failed" for run in runs)
+        return [Observation("failed_runs", float(failed), 1.0, metadata={"total_runs": len(runs)})]

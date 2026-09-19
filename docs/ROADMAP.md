@@ -2,27 +2,18 @@
 
 ## v0.1 — Bootstrap
 
-- [x] Estrutura de pacotes e configuração Python 3.11.
-- [x] Contrato inicial de observação e classificação de risco.
-- [x] Conector mínimo para Azure Synapse.
-- [x] Testes unitários do classificador.
+- Contracts, risk classification and initial observability foundation.
 
-## v0.2 — Sinais reais
+## Sprint 2 — Foundation architecture
 
-- [ ] Consultas de duração, falha, freshness e volume.
-- [ ] Cliente Synapse com autenticação por identidade gerenciada.
-- [ ] Timeout, retry e telemetria dos conectores.
-- [ ] Exportação de métricas e alertas para Slack/Teams.
+- [x] Provider abstraction and normalized `PipelineRun` model.
+- [x] Demo dataset with 127 simulated executions.
+- [x] Provider-agnostic GuardianScout.
+- [x] Streamlit dashboard with KPIs, daily chart and filters.
+- [x] Synapse integration boundary and environment configuration.
 
-## v0.3 — Contexto operacional
+## Sprint 3 — Cloud signals
 
-- [ ] Persistência de histórico e detecção de tendências.
-- [ ] Catálogo de owners, SLAs e contratos de dados.
-- [ ] Correlação entre incidentes, jobs e tabelas.
-- [ ] Runbooks versionados.
-
-## v0.4 — Investigação assistida
-
-- [ ] Indexação de documentação e incidentes.
-- [ ] RAG com citações e controle de acesso.
-- [ ] Resumo de causa provável com aprovação humana.
+- [ ] Implement Synapse query adapter with managed identity.
+- [ ] Add Azure Monitor query metrics and structured telemetry.
+- [ ] Persist execution history and alert on SLA breaches.
