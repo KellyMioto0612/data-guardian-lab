@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11,<3.13"
 license = { text = "Proprietary" }
 authors = [{ name = "Data Guardian Lab" }]
-dependencies = ["pydantic>=2.7,<3"]
+dependencies = ["pydantic>=2.7,<3", "sqlglot>=25,<26"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0,<9", "pytest-cov>=5.0,<6", "ruff>=0.6,<1"]
