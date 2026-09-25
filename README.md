@@ -1,6 +1,6 @@
 # Data Guardian Lab
 
-Plataforma Python 3.11 para observabilidade de dados: coleta sinais de execução, classifica riscos e oferece uma base extensível para investigação assistida por conhecimento.
+Plataforma Python 3.11–3.12 para observabilidade de dados: coleta sinais de execução, classifica riscos e oferece uma base extensível para investigação assistida por conhecimento.
 
 ## Objetivos
 
@@ -24,7 +24,7 @@ docs/                # Arquitetura, decisões e roadmap
 
 ## Desenvolvimento local
 
-Requer Python 3.11 ou superior.
+Requer Python 3.11 ou 3.12. O `requirements.lock` e a CI usam Python 3.12; para instalar o lock reproduzível, use essa versão.
 
 ```bash
 python -m venv .venv
@@ -34,7 +34,7 @@ pytest
 ruff check .
 ```
 
-As bibliotecas Azure permanecem opcionais até a implementação do adaptador Synapse. Quando ele existir, instale `pip install -e ".[azure]"`.
+O adaptador de execuções do Synapse já está implementado. As bibliotecas Azure são opcionais na instalação local; para usá-lo, instale `pip install -e ".[azure]"`. A conexão com um workspace autorizado ainda precisa ser homologada.
 
 ## Synapse em modo somente leitura
 
@@ -53,7 +53,7 @@ O conector não executa SQL, não altera recursos e consulta no máximo sete dia
 
 ## Status
 
-Versão inicial (v0.1): contratos mínimos para monitoramento, conexão com Synapse e classificação determinística de risco. Consulte [`docs/ROADMAP.md`](docs/ROADMAP.md) para os próximos incrementos.
+Protótipo funcional: monitoramento demonstrativo de pipelines, análise local de arquivos SQL (inventário, evidências, TDI, dependências e priorização) e dashboard. O conector Synapse de somente leitura está implementado e testado com respostas simuladas; ainda não foi homologado em workspace autorizado. Alertas, histórico operacional, investigação com IA e RAG continuam planejados. Consulte [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## Princípios
 
