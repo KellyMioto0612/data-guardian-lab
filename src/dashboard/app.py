@@ -1,6 +1,7 @@
 """Streamlit dashboard for Data Guardian Lab."""
 
 import os
+import sqlite3
 from pathlib import Path
 
 import pandas as pd
@@ -11,6 +12,7 @@ from src.analyzers.asset_inventory import build_asset_inventory, filter_asset_in
 from src.config.azure_auth import AzureAuthenticationError
 from src.config.settings import settings
 from src.connectors.synapse_pipeline import SynapseConnectorError
+from src.monitor.operational_history import OperationalHistory
 from src.pipeline.sql_pipeline import SQLPipeline
 from src.providers.base import PipelineProvider
 from src.providers.demo_provider import DemoProvider
@@ -120,11 +122,32 @@ def main() -> None:
     st.title("Data Guardian Lab")
     st.caption("Observabilidade de execuções de pipelines")
 
+    provider_name = os.getenv("DATA_PROVIDER", "demo").lower()
+    if provider_name != "synapse":
+        st.warning("MODO DEMONSTRAÇÃO: execuções fictícias; não representam pipelines reais.")
+    else:
+        st.info("Fonte: execuções do workspace Synapse configurado (somente leitura).")
+
     try:
         runs = build_provider().get_pipeline_runs()
     except (AzureAuthenticationError, SynapseConnectorError) as exc:
         st.error(f"Dados Synapse indisponíveis: {type(exc).__name__}")
         return
+
+    history_path = os.getenv("GUARDIAN_HISTORY_DB")
+    if history_path:
+        try:
+            history = OperationalHistory(history_path)
+            history.record(runs, source=provider_name)
+            finding = history.investigate(source=provider_name)
+            st.subheader("Histórico e alerta local")
+            if finding.alert:
+                st.warning(
+                    f"Alerta: {finding.failed_runs} execução(ões) com falha nas últimas 24 horas."
+                )
+            st.caption(finding.explanation)
+        except (OSError, ValueError, sqlite3.Error) as exc:
+            st.warning(f"Histórico local indisponível: {type(exc).__name__}")
 
     frame = pd.DataFrame([run.to_dict() for run in runs])
     if frame.empty:

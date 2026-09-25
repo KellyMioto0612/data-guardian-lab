@@ -27,3 +27,6 @@ estrutura.txt
 private_quarantine/
 *.7z
 *.zip
+*.db
+*.sqlite
+*.sqlite3

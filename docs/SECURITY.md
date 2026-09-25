@@ -5,6 +5,10 @@ conexões com bancos, não executa SQL e não envia conteúdo a serviços extern
 
 ## Dados e logs
 
+- O histórico local opcional (`GUARDIAN_HISTORY_DB`) grava somente metadados mínimos
+  de execução em SQLite e remove registros após 30 dias. A interface não envia alertas.
+  Armazenamento corporativo requer aprovação e definição de acesso e retenção.
+
 - Use somente fixtures sintéticos em `tests/fixtures/sql`.
 - Não versione dumps, SQL corporativo, backups `*.bak` ou inventários de máquina.
 - Erros do scanner identificam somente a classe da exceção; o conteúdo SQL é omitido.
