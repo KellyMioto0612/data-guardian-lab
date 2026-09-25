@@ -24,7 +24,7 @@ docs/                # Arquitetura, decisões e roadmap
 
 ## Desenvolvimento local
 
-Requer Python 3.11 ou superior.
+Requer Python 3.11 ou 3.12.
 
 ```bash
 python -m venv .venv
@@ -64,6 +64,10 @@ Para validar arquivos SQL autorizados localmente sem imprimir SQL, nomes ou cami
 ```bash
 python -m scripts.validate_sql_corpus /caminho/sql --allowed-root /caminho
 ```
+
+O resultado inclui contagens por regra e severidade. Veja
+[`docs/SQL_FINDINGS_PRIORITY.md`](docs/SQL_FINDINGS_PRIORITY.md) para interpretar impacto e
+priorizar a revisão antes de executar qualquer SQL em um ambiente autorizado.
 
 ## Princípios
 

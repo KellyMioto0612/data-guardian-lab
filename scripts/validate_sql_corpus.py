@@ -24,6 +24,9 @@ def main() -> None:
         "parse_errors": run.parse_error_count,
         "warnings": run.warning_count,
         "rule_counts": dict(sorted(Counter(item.rule_id for item in run.evidence).items())),
+        "severity_counts": dict(sorted(
+            Counter(item.severity.value for item in run.evidence).items()
+        )),
     }, ensure_ascii=False, sort_keys=True))
 
 

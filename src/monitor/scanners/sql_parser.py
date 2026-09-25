@@ -278,7 +278,14 @@ class SQLParser:
         fallback_count = 0
         for index, statement in enumerate(statements):
             expression = expressions[index] if index < len(expressions) else None
-            if expression is None:
+            # Some SQLGlot versions accept unsupported CREATE VIEW bodies as a
+            # generic Command. That is not a successfully parsed view asset.
+            unsupported_view = (
+                expression is not None
+                and isinstance(expression, exp.Command)
+                and self._definition_match(statement, "VIEW") is not None
+            )
+            if expression is None or unsupported_view:
                 entity = self._fallback_entity(statement, index)
                 fallback_count += 1
                 if entity is not None:
@@ -448,7 +455,9 @@ class SQLParser:
             tables_written=tuple(table for table in tables if table.operation != "read"),
             dependencies=dependencies,
             called_procedures=called,
-            normalized_sql=source.strip(),
+            # Ignore deployment commands preceding the object declaration so
+            # evidence rules cannot attribute their EXEC calls to the view.
+            normalized_sql=source[match.start():].strip() if match else source.strip(),
             source="regex_fallback",
             confidence_score=confidence_score,
             line_start=self._line_start(source),
@@ -478,6 +487,13 @@ class SQLParser:
                 r"(?is)^\s*(?:CREATE\s+(?:OR\s+ALTER\s+)?|ALTER\s+)(?:PROCEDURE|PROC)\b",
                 sql,
             )
+        )
+
+    @staticmethod
+    def _definition_match(sql: str, kind: str) -> re.Match[str] | None:
+        return re.search(
+            rf"(?is)\b(?:CREATE\s+(?:OR\s+ALTER\s+)?|ALTER\s+){kind}\s+[\[\]\w.]+",
+            sql,
         )
 
     @staticmethod

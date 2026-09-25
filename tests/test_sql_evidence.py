@@ -42,3 +42,24 @@ def test_advanced_rules_cover_documentation_temporary_tables_and_unbounded_write
     evidence = SQLEvidenceAnalyzer().analyze(entity)
 
     assert {item.rule_id for item in evidence} >= {"SQL-001", "SQL-005", "SQL-008", "SQL-009"}
+
+
+def test_qualified_select_star_is_reported_without_confusing_count_star() -> None:
+    parser = SQLParser()
+    analyzer = SQLEvidenceAnalyzer()
+    qualified = parser.parse("CREATE VIEW dbo.v AS SELECT a.* FROM dbo.orders a").entities[0]
+    aggregate = parser.parse(
+        "CREATE VIEW dbo.v AS SELECT COUNT(*) AS n FROM dbo.orders"
+    ).entities[0]
+
+    assert "SQL-001" in {item.rule_id for item in analyzer.analyze(qualified)}
+    assert "SQL-001" not in {item.rule_id for item in analyzer.analyze(aggregate)}
+
+
+def test_deployment_exec_is_not_attributed_to_view() -> None:
+    sql = "EXEC(N'DROP PROC dbo.old_view'); CREATE VIEW dbo.v AS SELECT 1 AS id"
+    view = next(
+        entity for entity in SQLParser().parse(sql).entities if entity.entity_type == "view"
+    )
+
+    assert "SQL-004" not in {item.rule_id for item in SQLEvidenceAnalyzer().analyze(view)}
