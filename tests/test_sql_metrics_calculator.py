@@ -1,20 +1,20 @@
 """Contract coverage for the Foundation SQL metrics calculator."""
 
+from collections.abc import Mapping
 from dataclasses import FrozenInstanceError, fields, is_dataclass
 from types import MappingProxyType
-from typing import Mapping
 
 import pytest
 
 from src.analyzers.sql_metrics_calculator import SQLMetricsCalculator
 from src.models.sql_metrics import SQLEntityMetrics, SQLMetrics
 from src.monitor.scanners.sql_parser import (
-    ParseIssue,
     ParsedCTE,
     ParsedEntity,
     ParsedJoin,
     ParsedSQL,
     ParsedTable,
+    ParseIssue,
 )
 
 
@@ -42,7 +42,9 @@ def table(name: str, *, schema: str = "dbo", operation: str = "read") -> ParsedT
 
 
 def test_returns_sql_metrics(calculator, entity_factory):
-    result = calculator.calculate(ParsedSQL(entities=(entity_factory("orders"),), statement_count=1))
+    result = calculator.calculate(
+        ParsedSQL(entities=(entity_factory("orders"),), statement_count=1)
+    )
 
     assert isinstance(result, SQLMetrics)
     assert result.entities
@@ -89,7 +91,9 @@ def test_counts_no_and_multiple_ctes(calculator, entity_factory):
 def test_calculates_cte_depth(calculator, entity_factory):
     chain = (ParsedCTE("A", references=("B",)), ParsedCTE("B", references=("C",)), ParsedCTE("C"))
     depth_three = calculator.calculate(ParsedSQL(entities=(entity_factory("q"),), ctes=chain))
-    depth_one = calculator.calculate(ParsedSQL(entities=(entity_factory("q"),), ctes=(ParsedCTE("A"),)))
+    depth_one = calculator.calculate(
+        ParsedSQL(entities=(entity_factory("q"),), ctes=(ParsedCTE("A"),))
+    )
     no_ctes = calculator.calculate(ParsedSQL(entities=(entity_factory("q"),)))
 
     assert depth_three.max_cte_depth == 3
@@ -162,8 +166,14 @@ def test_calculates_fan_out(calculator, entity_factory):
 
 
 def test_counts_called_procedures(calculator, entity_factory):
-    called = ("procedure:dbo.validate_orders", "procedure:dbo.refresh_customers", "procedure:dbo.validate_orders")
-    result = calculator.calculate(ParsedSQL(entities=(entity_factory("q", called_procedures=called),)))
+    called = (
+        "procedure:dbo.validate_orders",
+        "procedure:dbo.refresh_customers",
+        "procedure:dbo.validate_orders",
+    )
+    result = calculator.calculate(
+        ParsedSQL(entities=(entity_factory("q", called_procedures=called),))
+    )
 
     assert result.called_procedure_count == 2
     assert result.entities[0].called_procedure_count == 2

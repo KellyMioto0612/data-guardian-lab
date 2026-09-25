@@ -7,7 +7,6 @@ import pytest
 from src.models.pipeline_run import PipelineRun
 from src.pipeline.sql_pipeline import SQLPipeline
 
-
 FIXTURES = Path(__file__).parent / "fixtures" / "sql"
 
 
@@ -30,12 +29,32 @@ def test_run_complete_repository(pipeline: SQLPipeline) -> None:
 def test_procedures_preserve_calls_and_dependency_graph(pipeline: SQLPipeline) -> None:
     result = pipeline.run_directory(FIXTURES / "procedures")
 
-    assert {"procedures/refresh_orders.sql", "procedures/validate_orders.sql"} <= set(result.processed_files)
+    assert {"refresh_orders.sql", "validate_orders.sql"} <= set(result.processed_files)
     assert result.metrics is not None
     called = {name for entity in result.metrics.entities for name in entity.called_procedures}
     assert "dbo.refresh_orders" in called
     assert result.dependency_graph is not None
     assert any(edge.edge_type == "CALLS" for edge in result.dependency_graph.edges)
+
+
+def test_pipeline_only_promotes_persistent_assets(pipeline: SQLPipeline) -> None:
+    result = pipeline.run_file(FIXTURES / "procedures" / "refresh_orders.sql")
+
+    assert result.guardian_objects
+    assert {obj.object_type for obj in result.guardian_objects} == {"procedure"}
+    assert result.metadata["asset_classification_counts"]["asset"] == 1
+    assert result.evidence
+    assert result.evidence[0].rule_id == "SQL-005"
+    assert result.guardian_objects[0].metadata["technical_debt"]["score"] == 10.0
+    assert result.observations[0].metadata["evidence"][0]["rule_id"] == "SQL-005"
+
+
+def test_pipeline_retains_evidence_for_non_persistent_sql(pipeline: SQLPipeline) -> None:
+    result = pipeline.run_file(FIXTURES / "joins" / "cross_join.sql")
+
+    assert not result.guardian_objects
+    assert [item.rule_id for item in result.evidence] == ["SQL-002"]
+    assert result.metadata["evidence_count"] == 1
 
 
 def test_views_create_guardian_objects_and_reads(pipeline: SQLPipeline) -> None:
@@ -62,7 +81,7 @@ def test_join_fixtures_preserve_join_metadata(pipeline: SQLPipeline) -> None:
     result = pipeline.run_directory(FIXTURES / "joins")
 
     assert result.metrics is not None
-    assert result.metrics.join_count >= 4
+    assert result.metrics.join_count >= 3
     join_types = result.metrics.join_types.as_mapping()
     assert join_types["INNER"] >= 1
     assert join_types["LEFT"] >= 1

@@ -29,11 +29,27 @@ Requer Python 3.11 ou superior.
 ```bash
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\\Scripts\\activate
-pip install -r requirements.txt
-pip install -e .
+pip install -e ".[dev]"
 pytest
 ruff check .
 ```
+
+As bibliotecas Azure permanecem opcionais até a implementação do adaptador Synapse. Quando ele existir, instale `pip install -e ".[azure]"`.
+
+## Synapse em modo somente leitura
+
+O conector consulta apenas execuções de pipelines e usa token Microsoft Entra. Para validação
+local em homologação, instale as dependências Azure, faça login interativo e configure a sessão:
+
+```powershell
+pip install -e ".[azure]"
+az login
+$env:DATA_PROVIDER = "synapse"
+$env:AZURE_AUTH_MODE = "azure_cli"
+$env:SYNAPSE_WORKSPACE = "seu-workspace"
+```
+
+O conector não executa SQL, não altera recursos e consulta no máximo sete dias de execuções.
 
 ## Status
 

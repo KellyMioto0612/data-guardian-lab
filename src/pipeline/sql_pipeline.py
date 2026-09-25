@@ -71,9 +71,10 @@ class SQLPipeline:
             raise ValueError("dependency graph contains duplicate nodes")
         if len(edge_ids) != len(set(edge_ids)):
             raise ValueError("dependency graph contains duplicate edges")
-        expected = {}
+        destinations: dict[str, set[str]] = {}
         for edge in graph.edges:
-            expected[edge.source_id] = expected.get(edge.source_id, 0) + 1
+            destinations.setdefault(edge.source_id, set()).add(edge.target_id)
+        expected = {source: len(targets) for source, targets in destinations.items()}
         if dict(graph.fan_out_by_node) != expected:
             raise ValueError("dependency graph fan_out_by_node is inconsistent")
 

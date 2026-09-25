@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -34,7 +34,7 @@ def make_observation(
         name="failed_runs",
         value=value,
         threshold=threshold,
-        observed_at=datetime.now(timezone.utc),
+        observed_at=datetime.now(UTC),
     )
 
 

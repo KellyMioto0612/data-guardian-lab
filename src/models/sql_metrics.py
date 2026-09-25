@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Mapping
 
 
 def _validate_non_negative(name: str, value: int | float | None) -> None:
@@ -45,18 +45,22 @@ class JoinTypeCounts:
 
     @property
     def total(self) -> int:
-        return sum((self.inner, self.left, self.right, self.full, self.cross, self.natural, self.unknown))
+        return sum(
+            (self.inner, self.left, self.right, self.full, self.cross, self.natural, self.unknown)
+        )
 
     def as_mapping(self) -> Mapping[str, int]:
-        return MappingProxyType({
-            "CROSS": self.cross,
-            "FULL": self.full,
-            "INNER": self.inner,
-            "LEFT": self.left,
-            "NATURAL": self.natural,
-            "RIGHT": self.right,
-            "UNKNOWN": self.unknown,
-        })
+        return MappingProxyType(
+            {
+                "CROSS": self.cross,
+                "FULL": self.full,
+                "INNER": self.inner,
+                "LEFT": self.left,
+                "NATURAL": self.natural,
+                "RIGHT": self.right,
+                "UNKNOWN": self.unknown,
+            }
+        )
 
 
 @dataclass(frozen=True)
@@ -127,11 +131,23 @@ class SQLEntityMetrics:
 
     def __post_init__(self) -> None:
         counters = (
-            "statement_count", "procedure_count", "view_count", "script_count",
-            "cte_count", "recursive_cte_count", "join_count", "cross_join_count",
-            "joins_without_condition", "read_table_count", "written_table_count",
-            "unique_table_count", "table_reference_count", "dependency_count",
-            "dependency_fan_out", "called_procedure_count", "parse_error_count",
+            "statement_count",
+            "procedure_count",
+            "view_count",
+            "script_count",
+            "cte_count",
+            "recursive_cte_count",
+            "join_count",
+            "cross_join_count",
+            "joins_without_condition",
+            "read_table_count",
+            "written_table_count",
+            "unique_table_count",
+            "table_reference_count",
+            "dependency_count",
+            "dependency_fan_out",
+            "called_procedure_count",
+            "parse_error_count",
             "warning_count",
         )
         for name in counters:
@@ -150,7 +166,9 @@ class SQLEntityMetrics:
                 unknown=int(join_types.get("UNKNOWN", join_types.get("unknown", 0))),
             )
         object.__setattr__(self, "join_types", join_types)
-        object.__setattr__(self, "dependency_fan_out_by_object", _freeze_mapping(self.dependency_fan_out_by_object))
+        object.__setattr__(
+            self, "dependency_fan_out_by_object", _freeze_mapping(self.dependency_fan_out_by_object)
+        )
         object.__setattr__(self, "tables_read", _sorted_tuple(self.tables_read))
         object.__setattr__(self, "tables_written", _sorted_tuple(self.tables_written))
         object.__setattr__(self, "dependencies", _sorted_tuple(self.dependencies))
@@ -198,12 +216,25 @@ class SQLMetrics:
 
     def __post_init__(self) -> None:
         counters = (
-            "entity_count", "procedure_count", "view_count", "script_count",
-            "statement_count", "cte_count", "recursive_cte_count", "join_count",
-            "cross_join_count", "joins_without_condition", "read_table_count",
-            "written_table_count", "unique_table_count", "table_reference_count",
-            "dependency_count", "dependency_fan_out", "called_procedure_count",
-            "parse_error_count", "warning_count",
+            "entity_count",
+            "procedure_count",
+            "view_count",
+            "script_count",
+            "statement_count",
+            "cte_count",
+            "recursive_cte_count",
+            "join_count",
+            "cross_join_count",
+            "joins_without_condition",
+            "read_table_count",
+            "written_table_count",
+            "unique_table_count",
+            "table_reference_count",
+            "dependency_count",
+            "dependency_fan_out",
+            "called_procedure_count",
+            "parse_error_count",
+            "warning_count",
         )
         for name in counters:
             _validate_non_negative(name, getattr(self, name))
@@ -220,12 +251,20 @@ class SQLMetrics:
                 unknown=int(join_types.get("UNKNOWN", join_types.get("unknown", 0))),
             )
         object.__setattr__(self, "join_types", join_types)
-        object.__setattr__(self, "dependency_fan_out_by_object", _freeze_mapping(self.dependency_fan_out_by_object))
+        object.__setattr__(
+            self, "dependency_fan_out_by_object", _freeze_mapping(self.dependency_fan_out_by_object)
+        )
         object.__setattr__(self, "tables_read", _sorted_tuple(self.tables_read))
         object.__setattr__(self, "tables_written", _sorted_tuple(self.tables_written))
         object.__setattr__(self, "unique_tables", _sorted_tuple(self.unique_tables))
         object.__setattr__(self, "dependencies", _sorted_tuple(self.dependencies))
-        object.__setattr__(self, "entities", tuple(sorted(self.entities, key=lambda item: (item.qualified_name or "", item.name or ""))))
+        object.__setattr__(
+            self,
+            "entities",
+            tuple(
+                sorted(self.entities, key=lambda item: (item.qualified_name or "", item.name or ""))
+            ),
+        )
         if isinstance(self.metadata, Mapping):
             object.__setattr__(self, "metadata", MetricMetadata(values=self.metadata))
 

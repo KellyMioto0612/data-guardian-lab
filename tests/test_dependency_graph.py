@@ -1,8 +1,8 @@
 """Coverage for the dependency graph foundation."""
 
+from collections.abc import Mapping
 from dataclasses import FrozenInstanceError, is_dataclass
 from types import MappingProxyType
-from typing import Mapping
 
 import pytest
 
@@ -62,13 +62,23 @@ def edge_types(graph: DependencyGraph) -> set[str]:
 def test_creates_all_required_node_types() -> None:
     cte = ParsedCTE(name="recent_orders", tables=(table("orders"),))
     graph = build(
-        entity("refresh", "procedure", qualified_name="dbo.refresh" , ctes=(cte,), reads=(table("orders"),)),
+        entity(
+            "refresh",
+            "procedure",
+            qualified_name="dbo.refresh",
+            ctes=(cte,),
+            reads=(table("orders"),),
+        ),
         entity("active", "view", qualified_name="sales.active", reads=(table("customers"),)),
         entity("script.sql", "sql_script", reads=(table("audit"),)),
     )
 
     assert {node.node_type for node in graph.nodes} == {
-        "procedure", "view", "sql_script", "cte", "table"
+        "procedure",
+        "view",
+        "sql_script",
+        "cte",
+        "table",
     }
 
 
@@ -81,10 +91,14 @@ def test_creates_all_required_edge_types_and_join_metadata() -> None:
     )
     graph = build(
         entity(
-            "refresh", "procedure", qualified_name="dbo.refresh",
-            reads=(table("orders"),), writes=(table("order_summary"),),
+            "refresh",
+            "procedure",
+            qualified_name="dbo.refresh",
+            reads=(table("orders"),),
+            writes=(table("order_summary"),),
             ctes=(ParsedCTE(name="base", tables=(table("orders"),)),),
-            joins=(join,), dependencies=("sales.orders",),
+            joins=(join,),
+            dependencies=("sales.orders",),
             called=("dbo.validate",),
         ),
     )
@@ -112,25 +126,31 @@ def test_deduplicates_nodes_and_edges() -> None:
 
 
 def test_calculates_fan_out_using_distinct_destinations() -> None:
-    graph = build(entity(
-        "refresh", "procedure", qualified_name="dbo.refresh",
-        reads=(table("orders"), table("orders")),
-        writes=(table("summary"),),
-        called=("dbo.validate",),
-    ))
+    graph = build(
+        entity(
+            "refresh",
+            "procedure",
+            qualified_name="dbo.refresh",
+            reads=(table("orders"), table("orders")),
+            writes=(table("summary"),),
+            called=("dbo.validate",),
+        )
+    )
 
     assert graph.fan_out_by_node["procedure:dbo.refresh"] == 3
 
 
 def test_collects_called_procedures() -> None:
-    graph = build(entity(
-        "refresh", "procedure", qualified_name="dbo.refresh",
-        called=("dbo.validate", "dbo.validate"),
-    ))
-
-    assert graph.called_procedures["procedure:dbo.refresh"] == (
-        "procedure:dbo.validate",
+    graph = build(
+        entity(
+            "refresh",
+            "procedure",
+            qualified_name="dbo.refresh",
+            called=("dbo.validate", "dbo.validate"),
+        )
     )
+
+    assert graph.called_procedures["procedure:dbo.refresh"] == ("procedure:dbo.validate",)
 
 
 def test_calculates_cte_reuse_and_shared_tables() -> None:
@@ -144,9 +164,7 @@ def test_calculates_cte_reuse_and_shared_tables() -> None:
 
     assert graph.cte_reuse["cte:view:sales.one:recent"] == 1
     assert graph.cte_reuse["cte:view:sales.two:recent"] == 1
-    assert graph.shared_tables["table:sales.orders"] == (
-        "view:sales.one", "view:sales.two"
-    )
+    assert graph.shared_tables["table:sales.orders"] == ("view:sales.one", "view:sales.two")
 
 
 def test_calculates_simple_and_long_dependency_chains() -> None:

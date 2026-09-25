@@ -1,6 +1,6 @@
 """Deterministic demo data provider for local development."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from src.models.pipeline_run import PipelineRun
 from src.providers.base import PipelineProvider
@@ -10,7 +10,7 @@ class DemoProvider(PipelineProvider):
     """Generate 127 representative executions without external dependencies."""
 
     def get_pipeline_runs(self) -> list[PipelineRun]:
-        start = datetime.now(timezone.utc).replace(hour=8, minute=0, second=0, microsecond=0)
+        start = datetime.now(UTC).replace(hour=8, minute=0, second=0, microsecond=0)
         statuses = ("Success", "Success", "Success", "Failed", "Running")
         runs: list[PipelineRun] = []
         for index in range(127):

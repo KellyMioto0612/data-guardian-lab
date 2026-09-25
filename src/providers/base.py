@@ -1,8 +1,12 @@
 """Abstract provider contract for pipeline observability."""
 
-from abc import ABC, abstractmethod
+from __future__ import annotations
 
-from src.models.pipeline_run import PipelineRun
+from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.models.pipeline_run import PipelineRun
 
 
 class PipelineProvider(ABC):
