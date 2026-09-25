@@ -12,7 +12,10 @@ from src.monitor.scanners.sql_parser import ParsedEntity
 class SQLEvidenceAnalyzer:
     """Produce explainable findings without preserving SQL fragments in output."""
 
-    _SELECT_STAR = re.compile(r"(?is)\bSELECT\s+(?:DISTINCT\s+)?\*")
+    _SELECT_STAR = re.compile(
+        r"(?is)\bSELECT\s+(?:DISTINCT\s+)?(?:[\[\]\w]+\s*\.\s*)?\*"
+        r"|,\s*[\[\]\w]+\s*\.\s*\*"
+    )
     _DYNAMIC_EXEC = re.compile(r"(?is)\bEXEC(?:UTE)?\s*\(")
     _SUBQUERY = re.compile(r"(?is)\(\s*SELECT\b")
     _TEMPORARY_TABLE = re.compile(r"(?<!\w)#\w+")
@@ -61,7 +64,7 @@ class SQLEvidenceAnalyzer:
             )
         if len(self._SUBQUERY.findall(normalized)) >= 2:
             findings.append(
-                ("SQL-007", EvidenceSeverity.LOW, "Nested subquery usage", entity.line_start)
+                ("SQL-007", EvidenceSeverity.LOW, "Multiple subquery patterns", entity.line_start)
             )
         if self._TEMPORARY_TABLE.search(normalized):
             findings.append(

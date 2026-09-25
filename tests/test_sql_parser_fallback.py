@@ -140,3 +140,18 @@ def test_sqlglot_warning_does_not_log_sql_content(caplog: pytest.LogCaptureFixtu
     SQLParser().parse("EXEC dbo.private_operation @token = 'do-not-log'")
 
     assert "do-not-log" not in caplog.text
+
+
+def test_unsupported_view_body_keeps_asset_identity() -> None:
+    sql = (
+        "CREATE VIEW dbo.v_example AS SELECT id FROM dbo.orders ORDER BY id DESC\n"
+        "SELECT id FROM dbo.orders"
+    )
+
+    result = SQLParser().parse(sql)
+
+    assert len(result.entities) == 1
+    assert result.entities[0].entity_type == "view"
+    assert result.entities[0].qualified_name == "dbo.v_example"
+    assert result.entities[0].source == "regex_fallback"
+    assert any(issue.code == "PARSE-002" for issue in result.issues)
