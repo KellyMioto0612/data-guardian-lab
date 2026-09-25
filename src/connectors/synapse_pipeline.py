@@ -58,6 +58,8 @@ class SynapsePipelineConnector:
         before = self._utc(last_updated_before)
         if after >= before:
             raise ValueError("last_updated_after must be before last_updated_before")
+        if before - after > timedelta(days=7):
+            raise ValueError("Synapse query interval cannot exceed seven days")
         token = self.credential.get_token(_SCOPE).token
         headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
         payload: dict[str, object] = {
@@ -66,7 +68,7 @@ class SynapsePipelineConnector:
             "orderBy": [{"orderBy": "RunStart", "order": "DESC"}],
         }
         runs: list[PipelineRun] = []
-        for _ in range(self.max_pages):
+        for page in range(self.max_pages):
             response = self.transport(self._url, headers, payload, self.timeout_seconds)
             values = response.get("value", ())
             if not isinstance(values, list):
@@ -75,6 +77,10 @@ class SynapsePipelineConnector:
             continuation = response.get("continuationToken")
             if not continuation:
                 break
+            if page == self.max_pages - 1:
+                raise SynapseConnectorError(
+                    "Synapse pagination limit reached; results are incomplete"
+                )
             payload["continuationToken"] = str(continuation)
         return runs
 

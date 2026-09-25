@@ -1,6 +1,6 @@
 # Data Guardian Lab
 
-Plataforma Python 3.11–3.12 para observabilidade de dados: coleta sinais de execução, classifica riscos e oferece uma base extensível para investigação assistida por conhecimento.
+Plataforma Python 3.11 para observabilidade de dados: coleta sinais de execução, classifica riscos e oferece uma base extensível para investigação assistida por conhecimento.
 
 ## Objetivos
 
@@ -24,7 +24,7 @@ docs/                # Arquitetura, decisões e roadmap
 
 ## Desenvolvimento local
 
-Requer Python 3.11 ou 3.12. O `requirements.lock` e a CI usam Python 3.12; para instalar o lock reproduzível, use essa versão.
+Requer Python 3.11 ou superior.
 
 ```bash
 python -m venv .venv
@@ -34,7 +34,7 @@ pytest
 ruff check .
 ```
 
-O adaptador de execuções do Synapse já está implementado. As bibliotecas Azure são opcionais na instalação local; para usá-lo, instale `pip install -e ".[azure]"`. A conexão com um workspace autorizado ainda precisa ser homologada.
+As bibliotecas Azure permanecem opcionais até a implementação do adaptador Synapse. Quando ele existir, instale `pip install -e ".[azure]"`.
 
 ## Synapse em modo somente leitura
 
@@ -49,11 +49,21 @@ $env:AZURE_AUTH_MODE = "azure_cli"
 $env:SYNAPSE_WORKSPACE = "seu-workspace"
 ```
 
-O conector não executa SQL, não altera recursos e consulta no máximo sete dias de execuções.
+O conector não executa SQL, não altera recursos, rejeita janelas acima de sete dias e sinaliza paginação incompleta. Veja [`docs/SYNAPSE_VALIDATION.md`](docs/SYNAPSE_VALIDATION.md) para a homologação.
 
 ## Status
 
-Protótipo funcional: monitoramento demonstrativo de pipelines, análise local de arquivos SQL (inventário, evidências, TDI, dependências e priorização) e dashboard. O conector Synapse de somente leitura está implementado e testado com respostas simuladas; ainda não foi homologado em workspace autorizado. Alertas, histórico operacional, investigação com IA e RAG continuam planejados. Consulte [`docs/ROADMAP.md`](docs/ROADMAP.md).
+Versão inicial (v0.1): contratos mínimos para monitoramento, conexão com Synapse e classificação determinística de risco. Consulte [`docs/ROADMAP.md`](docs/ROADMAP.md) para os próximos incrementos.
+
+## Histórico e alertas locais
+
+Defina `GUARDIAN_HISTORY_DB` com um caminho SQLite aprovado para habilitar histórico opcional com retenção de 30 dias e alerta visual para falhas nas últimas 24 horas. Somente identificador, nome, status, início e duração das execuções são armazenados. Dados de demonstração e Synapse ficam separados. Não há envio de alertas nem diagnóstico automático de causa raiz; a investigação atual apenas resume os fatos observados.
+
+Para validar arquivos SQL autorizados localmente sem imprimir SQL, nomes ou caminhos:
+
+```bash
+python -m scripts.validate_sql_corpus /caminho/sql --allowed-root /caminho
+```
 
 ## Princípios
 
