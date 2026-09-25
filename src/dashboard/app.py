@@ -86,7 +86,7 @@ def render_sql_intelligence() -> None:
     cards = st.columns(4)
     cards[0].metric("Ativos SQL", len(debt_rows))
     cards[1].metric("Evidências", len(evidence))
-    cards[2].metric("Alta criticidade", high)
+    cards[2].metric("Evidências altas ou críticas", high)
     cards[3].metric("TDI médio", f"{average_tdi:.1f}/100")
 
     type_options = sorted({str(row["Tipo"]) for row in debt_rows})
@@ -140,8 +140,8 @@ def main() -> None:
     durations = filtered.loc[filtered["duration_seconds"] > 0, "duration_seconds"]
 
     cards = st.columns(4)
-    cards[0].metric("Total de pipelines", len(filtered))
-    cards[1].metric("Falhas críticas", failed)
+    cards[0].metric("Execuções no período", len(filtered))
+    cards[1].metric("Execuções com falha", failed)
     cards[2].metric("Tempo médio", f"{durations.mean() / 60:.1f} min" if len(durations) else "—")
     cards[3].metric("Taxa de sucesso", f"{success_rate:.1f}%")
 
