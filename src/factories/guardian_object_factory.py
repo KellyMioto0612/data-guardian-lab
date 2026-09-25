@@ -14,10 +14,7 @@ class GuardianObjectFactory:
     def from_parsed_entity(self, entity: ParsedEntity) -> GuardianObject:
         """Adapt one parser entity to a :class:`GuardianObject`."""
         object_id = (
-            entity.qualified_name
-            or entity.entity_fingerprint_seed
-            or entity.name
-            or "statement"
+            entity.qualified_name or entity.entity_fingerprint_seed or entity.name or "statement"
         )
         name = entity.name or (entity.qualified_name or object_id).rsplit(".", 1)[-1]
         metadata = dict(entity.metadata)

@@ -4,8 +4,14 @@ from __future__ import annotations
 
 from collections import Counter
 
-from src.models.sql_metrics import SQLMetrics, SQLEntityMetrics
-from src.monitor.scanners.sql_parser import ParsedCTE, ParsedEntity, ParsedJoin, ParsedSQL, ParsedTable
+from src.models.sql_metrics import SQLEntityMetrics, SQLMetrics
+from src.monitor.scanners.sql_parser import (
+    ParsedCTE,
+    ParsedEntity,
+    ParsedJoin,
+    ParsedSQL,
+    ParsedTable,
+)
 
 
 class SQLMetricsCalculator:
@@ -15,7 +21,9 @@ class SQLMetricsCalculator:
         entities = tuple(parsed.entities)
         entity_metrics = tuple(self._entity_metrics(entity) for entity in entities)
         reads = tuple(self._table_id(table) for entity in entities for table in entity.tables_read)
-        writes = tuple(self._table_id(table) for entity in entities for table in entity.tables_written)
+        writes = tuple(
+            self._table_id(table) for entity in entities for table in entity.tables_written
+        )
         joins = tuple(join for entity in entities for join in entity.joins)
         join_types = Counter(self._join_type(join) for join in joins)
         dependencies = tuple(sorted({item for entity in entities for item in entity.dependencies}))
@@ -107,8 +115,10 @@ class SQLMetricsCalculator:
 
     @staticmethod
     def _aggregate_ctes(parsed: ParsedSQL) -> tuple[ParsedCTE, ...]:
-        return tuple(parsed.ctes) if parsed.ctes else tuple(
-            cte for entity in parsed.entities for cte in entity.ctes
+        return (
+            tuple(parsed.ctes)
+            if parsed.ctes
+            else tuple(cte for entity in parsed.entities for cte in entity.ctes)
         )
 
     @staticmethod
@@ -122,8 +132,15 @@ class SQLMetricsCalculator:
     @staticmethod
     def _join_type(join: ParsedJoin) -> str:
         value = (join.join_type or "").strip().upper().replace(" JOIN", "")
-        value = {"": "UNKNOWN", "LEFT OUTER": "LEFT", "RIGHT OUTER": "RIGHT", "FULL OUTER": "FULL"}.get(value, value)
-        return value if value in {"INNER", "LEFT", "RIGHT", "FULL", "CROSS", "NATURAL"} else "UNKNOWN"
+        value = {
+            "": "UNKNOWN",
+            "LEFT OUTER": "LEFT",
+            "RIGHT OUTER": "RIGHT",
+            "FULL OUTER": "FULL",
+        }.get(value, value)
+        return (
+            value if value in {"INNER", "LEFT", "RIGHT", "FULL", "CROSS", "NATURAL"} else "UNKNOWN"
+        )
 
     @staticmethod
     def _entity_id(entity: ParsedEntity) -> str:

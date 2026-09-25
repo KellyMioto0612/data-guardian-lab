@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from src.analyzers.dependency_graph import DependencyGraph
 from src.models.guardian_object import GuardianObject
-from src.models.sql_metrics import SQLMetrics, SQLEntityMetrics
+from src.models.sql_metrics import SQLEntityMetrics, SQLMetrics
 from src.monitor.guardian_scout import Observation
 from src.monitor.scanners.sql_parser import ParsedEntity
 
@@ -72,7 +72,7 @@ class ObservationFactory:
             name=guardian_object.name,
             value=0.0,
             threshold=1.0,
-            observed_at=datetime.now(timezone.utc),
+            observed_at=datetime.now(UTC),
             metadata=metadata,
         )
 
@@ -90,8 +90,7 @@ class ObservationFactory:
                 (
                     entity
                     for entity in candidates
-                    if entity.qualified_name == parsed.qualified_name
-                    or entity.name == parsed.name
+                    if entity.qualified_name == parsed.qualified_name or entity.name == parsed.name
                 ),
                 None,
             )

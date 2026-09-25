@@ -1,11 +1,15 @@
 """Provider-agnostic monitoring orchestration."""
 
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any
+from __future__ import annotations
 
-from src.models.pipeline_run import PipelineRun
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Any
+
 from src.providers.base import PipelineProvider
+
+if TYPE_CHECKING:
+    from src.models.pipeline_run import PipelineRun
 
 
 @dataclass(frozen=True)
@@ -13,7 +17,7 @@ class Observation:
     name: str
     value: float
     threshold: float
-    observed_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    observed_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -28,5 +32,5 @@ class GuardianScout:
 
     def run(self) -> list[Observation]:
         runs = self.collect_runs()
-        failed = sum(run.status == "Failed" for run in runs)
+        failed = sum(run.status.upper() == "FAILED" for run in runs)
         return [Observation("failed_runs", float(failed), 1.0, metadata={"total_runs": len(runs)})]

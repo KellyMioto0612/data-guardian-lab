@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Mapping
 
 from src.monitor.scanners.sql_parser import ParsedEntity, ParsedSQL, ParsedTable
 
@@ -57,9 +57,17 @@ class DependencyGraph:
         object.__setattr__(self, "nodes", tuple(self.nodes))
         object.__setattr__(self, "edges", tuple(self.edges))
         object.__setattr__(self, "fan_out_by_node", _freeze(self.fan_out_by_node))
-        object.__setattr__(self, "called_procedures", _freeze({k: tuple(sorted(v)) for k, v in self.called_procedures.items()}))
+        object.__setattr__(
+            self,
+            "called_procedures",
+            _freeze({k: tuple(sorted(v)) for k, v in self.called_procedures.items()}),
+        )
         object.__setattr__(self, "cte_reuse", _freeze(self.cte_reuse))
-        object.__setattr__(self, "shared_tables", _freeze({k: tuple(sorted(v)) for k, v in self.shared_tables.items()}))
+        object.__setattr__(
+            self,
+            "shared_tables",
+            _freeze({k: tuple(sorted(v)) for k, v in self.shared_tables.items()}),
+        )
         object.__setattr__(self, "metadata", _freeze(self.metadata))
 
 
@@ -73,13 +81,18 @@ class DependencyGraphBuilder:
         table_ids: dict[str, str] = {}
         procedure_ids: dict[str, str] = {}
         consumers: dict[str, set[str]] = {}
+        cte_ids_by_name: dict[str, list[str]] = {}
 
         def node(node_value: DependencyNode) -> str:
             nodes.setdefault(node_value.node_id, node_value)
             return node_value.node_id
 
-        def edge(source: str, target: str, kind: str, metadata: Mapping[str, object] | None = None) -> None:
-            edges.setdefault((source, target, kind), DependencyEdge(source, target, kind, metadata or {}))
+        def edge(
+            source: str, target: str, kind: str, metadata: Mapping[str, object] | None = None
+        ) -> None:
+            edges.setdefault(
+                (source, target, kind), DependencyEdge(source, target, kind, metadata or {})
+            )
 
         def table(value: ParsedTable) -> str:
             key = self._table_key(value)
@@ -90,7 +103,16 @@ class DependencyGraphBuilder:
         for index, entity in enumerate(parsed.entities):
             identifier = self._entity_id(entity, index)
             entity_ids[index] = identifier
-            node(DependencyNode(identifier, entity.entity_type, entity.name or identifier, entity.qualified_name, entity.schema, entity.database))
+            node(
+                DependencyNode(
+                    identifier,
+                    entity.entity_type,
+                    entity.name or identifier,
+                    entity.qualified_name,
+                    entity.schema,
+                    entity.database,
+                )
+            )
             if entity.entity_type.lower() == "procedure" and entity.qualified_name:
                 procedure_ids.setdefault(entity.qualified_name, identifier)
 
@@ -98,7 +120,12 @@ class DependencyGraphBuilder:
             owner = entity_ids[index]
             for cte in entity.ctes:
                 cte_id = f"cte:{owner}:{cte.name}"
-                node(DependencyNode(cte_id, "cte", cte.name, cte.name, metadata={"recursive": cte.recursive}))
+                node(
+                    DependencyNode(
+                        cte_id, "cte", cte.name, cte.name, metadata={"recursive": cte.recursive}
+                    )
+                )
+                cte_ids_by_name.setdefault(cte.name, []).append(cte_id)
                 edge(owner, cte_id, "DEPENDS_ON")
                 for value in cte.tables:
                     target = table(value)
@@ -123,55 +150,130 @@ class DependencyGraphBuilder:
                 if target:
                     edge(owner, target, "DEPENDS_ON")
             for join in entity.joins:
-                target = self._resolve_name(join.right, nodes, table_ids)
+                target = self._resolve_join_target(join.right, nodes, table_ids)
                 if target:
-                    edge(owner, target, "JOINS", {"join_type": join.join_type, "condition": join.condition, "left": join.left, "right": join.right})
+                    edge(
+                        owner,
+                        target,
+                        "JOINS",
+                        {
+                            "join_type": join.join_type,
+                            "condition": join.condition,
+                            "left": join.left,
+                            "right": join.right,
+                        },
+                    )
 
         destinations: dict[str, set[str]] = {}
         for item in edges.values():
             destinations.setdefault(item.source_id, set()).add(item.target_id)
         fan_out = {key: len(value) for key, value in sorted(destinations.items())}
         called = {
-            entity_ids[index]: tuple(sorted({procedure_ids.get(name, f"procedure:{name}") for name in entity.called_procedures}))
-            for index, entity in enumerate(parsed.entities) if entity.called_procedures
+            entity_ids[index]: tuple(
+                sorted(
+                    {
+                        procedure_ids.get(name, f"procedure:{name}")
+                        for name in entity.called_procedures
+                    }
+                )
+            )
+            for index, entity in enumerate(parsed.entities)
+            if entity.called_procedures
         }
-        longest, cycles = self._chain_metrics(tuple(nodes), tuple(edges.values()))
+        cte_reuse = {
+            identifier: len(identifiers) - 1
+            for identifiers in cte_ids_by_name.values()
+            if len(identifiers) > 1
+            for identifier in identifiers
+        }
+        longest, cycles = self._chain_metrics(tuple(nodes.values()), tuple(edges.values()))
         return DependencyGraph(
-            nodes=tuple(nodes.values()), edges=tuple(edges.values()), fan_out_by_node=fan_out,
-            called_procedures=called, shared_tables={k: tuple(sorted(v)) for k, v in consumers.items() if len(v) > 1},
-            max_dependency_chain=longest, metadata={"cycles": cycles},
+            nodes=tuple(nodes.values()),
+            edges=tuple(edges.values()),
+            fan_out_by_node=fan_out,
+            called_procedures=called,
+            cte_reuse=cte_reuse,
+            shared_tables={k: tuple(sorted(v)) for k, v in consumers.items() if len(v) > 1},
+            max_dependency_chain=longest,
+            metadata={"cycles": cycles},
         )
 
     @staticmethod
     def _entity_id(entity: ParsedEntity, index: int) -> str:
-        return f"{entity.entity_type}:{entity.qualified_name or entity.name or 'statement'}"
+        identity = entity.qualified_name or entity.name or "statement"
+        suffix = "" if entity.qualified_name else f":{index}"
+        return f"{entity.entity_type}:{identity}{suffix}"
 
     @staticmethod
     def _table_key(table: ParsedTable) -> str:
         return ".".join(part for part in (table.database, table.schema, table.name) if part)
 
     @staticmethod
-    def _resolve_procedure(name: str, procedures: Mapping[str, str], nodes: dict[str, DependencyNode]) -> str:
+    def _resolve_procedure(
+        name: str, procedures: Mapping[str, str], nodes: dict[str, DependencyNode]
+    ) -> str:
         identifier = procedures.get(name, f"procedure:{name}")
-        nodes.setdefault(identifier, DependencyNode(identifier, "procedure", name, qualified_name=name, metadata={"external": identifier not in procedures}))
+        nodes.setdefault(
+            identifier,
+            DependencyNode(
+                identifier,
+                "procedure",
+                name,
+                qualified_name=name,
+                metadata={"external": identifier not in procedures},
+            ),
+        )
         return identifier
 
     @staticmethod
-    def _resolve_dependency(value: str, nodes: Mapping[str, DependencyNode], tables: Mapping[str, str]) -> str | None:
+    def _resolve_dependency(
+        value: str, nodes: Mapping[str, DependencyNode], tables: Mapping[str, str]
+    ) -> str | None:
         for identifier, item in nodes.items():
             if item.qualified_name == value or item.name == value:
                 return identifier
         return tables.get(value) or (f"table:{value}" if value else None)
 
     @staticmethod
-    def _resolve_name(value: str | None, nodes: Mapping[str, DependencyNode], tables: Mapping[str, str]) -> str | None:
+    def _resolve_name(
+        value: str | None, nodes: Mapping[str, DependencyNode], tables: Mapping[str, str]
+    ) -> str | None:
         if not value:
             return None
         clean = value.replace("[", "").replace("]", "")
-        return next((identifier for identifier, item in nodes.items() if item.name == clean or item.qualified_name == clean), tables.get(clean))
+        return next(
+            (
+                identifier
+                for identifier, item in nodes.items()
+                if item.name == clean or item.qualified_name == clean
+            ),
+            tables.get(clean),
+        )
 
     @staticmethod
-    def _chain_metrics(nodes: tuple[DependencyNode, ...], edges: tuple[DependencyEdge, ...]) -> tuple[int, tuple[tuple[str, ...], ...]]:
+    def _resolve_join_target(
+        value: str | None,
+        nodes: dict[str, DependencyNode],
+        tables: dict[str, str],
+    ) -> str | None:
+        target = DependencyGraphBuilder._resolve_name(value, nodes, tables)
+        if target is not None or not value:
+            return target
+        clean = value.replace("[", "").replace("]", "")
+        parts = clean.split(".")
+        name = parts[-1]
+        schema = parts[-2] if len(parts) > 1 else None
+        database = parts[-3] if len(parts) > 2 else None
+        identifier = tables.setdefault(clean, f"table:{clean}")
+        nodes.setdefault(
+            identifier, DependencyNode(identifier, "table", name, clean, schema, database)
+        )
+        return identifier
+
+    @staticmethod
+    def _chain_metrics(
+        nodes: tuple[DependencyNode, ...], edges: tuple[DependencyEdge, ...]
+    ) -> tuple[int, tuple[tuple[str, ...], ...]]:
         adjacency: dict[str, set[str]] = {}
         for item in edges:
             adjacency.setdefault(item.source_id, set()).add(item.target_id)
@@ -184,7 +286,7 @@ class DependencyGraphBuilder:
             children = tuple(sorted(adjacency.get(identifier, set())))
             for child in children:
                 if child in current:
-                    cycles.add(current[current.index(child):] + (child,))
+                    cycles.add(current[current.index(child) :] + (child,))
             return max((visit(child, current) for child in children), default=len(current))
 
         return max((visit(item.node_id, ()) for item in nodes), default=0), tuple(sorted(cycles))

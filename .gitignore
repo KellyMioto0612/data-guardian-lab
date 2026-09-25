@@ -1,0 +1,29 @@
+# Local secrets and environment-specific configuration
+.env
+.env.*
+!.env.example
+
+# Python environments and generated files
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# Local dashboard configuration
+.streamlit/secrets.toml
+
+# Private inputs and local diagnostics must never enter source control.
+demo/sql/
+estrutura.txt
+*.bak
+
+# Local quarantine and packaged workspaces
+private_quarantine/
+*.7z
+*.zip

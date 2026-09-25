@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import logging
+import re
+from collections.abc import Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from types import MappingProxyType
-import re
-from typing import Mapping
 
 import sqlglot
 from sqlglot import exp
@@ -19,8 +21,12 @@ def _dedupe(values: tuple[str, ...] | list[str]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(values))
 
 
-def _make_entity_id(entity_type: str, qualified_name: str | None, name: str | None, index: int | None = None) -> str:
-    identity = qualified_name or name or (f"statement:{index}" if index is not None else "statement")
+def _make_entity_id(
+    entity_type: str, qualified_name: str | None, name: str | None, index: int | None = None
+) -> str:
+    identity = (
+        qualified_name or name or (f"statement:{index}" if index is not None else "statement")
+    )
     return f"{entity_type}:{identity}"
 
 
@@ -41,7 +47,15 @@ def _join_seed(join: ParsedJoin) -> str:
 
 
 def _cte_seed(cte: ParsedCTE) -> str:
-    return repr((cte.name, cte.recursive, tuple(sorted(cte.references)), tuple(sorted(_table_seed(table) for table in cte.tables)), cte.normalized_sql))
+    return repr(
+        (
+            cte.name,
+            cte.recursive,
+            tuple(sorted(cte.references)),
+            tuple(sorted(_table_seed(table) for table in cte.tables)),
+            cte.normalized_sql,
+        )
+    )
 
 
 def _fingerprint_seed(
@@ -56,18 +70,20 @@ def _fingerprint_seed(
     dependencies: tuple[str, ...],
     called_procedures: tuple[str, ...],
 ) -> str:
-    return repr((
-        entity_type,
-        statement_type,
-        qualified_name,
-        normalized_sql,
-        tuple(sorted(_table_seed(table) for table in tables_read)),
-        tuple(sorted(_table_seed(table) for table in tables_written)),
-        tuple(sorted(_cte_seed(cte) for cte in ctes)),
-        tuple(sorted(_join_seed(join) for join in joins)),
-        tuple(sorted(dependencies)),
-        tuple(called_procedures),
-    ))
+    return repr(
+        (
+            entity_type,
+            statement_type,
+            qualified_name,
+            normalized_sql,
+            tuple(sorted(_table_seed(table) for table in tables_read)),
+            tuple(sorted(_table_seed(table) for table in tables_written)),
+            tuple(sorted(_cte_seed(cte) for cte in ctes)),
+            tuple(sorted(_join_seed(join) for join in joins)),
+            tuple(sorted(dependencies)),
+            tuple(called_procedures),
+        )
+    )
 
 
 @dataclass(frozen=True)
@@ -169,8 +185,16 @@ class ParsedEntity:
         dependencies = tuple(sorted(set(self.dependencies)))
         called = _dedupe(tuple(self.called_procedures))
         seed = self.entity_fingerprint_seed or _fingerprint_seed(
-            self.entity_type, self.statement_type, self.qualified_name, self.normalized_sql,
-            tables_read, tables_written, ctes, joins, dependencies, called,
+            self.entity_type,
+            self.statement_type,
+            self.qualified_name,
+            self.normalized_sql,
+            tables_read,
+            tables_written,
+            ctes,
+            joins,
+            dependencies,
+            called,
         )
         object.__setattr__(self, "tables_read", tables_read)
         object.__setattr__(self, "tables_written", tables_written)
@@ -200,7 +224,9 @@ class ParsedSQL:
     metadata: Mapping[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        occurrences = {key: tuple(sorted(set(values))) for key, values in self.cte_occurrences.items()}
+        occurrences = {
+            key: tuple(sorted(set(values))) for key, values in self.cte_occurrences.items()
+        }
         object.__setattr__(self, "entities", tuple(self.entities))
         object.__setattr__(self, "ctes", tuple(self.ctes))
         object.__setattr__(self, "joins", tuple(self.joins))
@@ -218,6 +244,13 @@ class SQLParser:
     def parse(self, sql: str, *, dialect: str = "tsql") -> ParsedSQL:
         if not sql.strip():
             return ParsedSQL(dialect_used=dialect)
+        # SQLGlot does not model complete SQL Server procedure bodies reliably.
+        # Extracting their structure is safer than accepting partial AST output
+        # (or allowing the parser to print raw SQL in warnings).
+        if self._is_tsql_procedure_definition(sql):
+            entity = self._fallback_entity(sql, 0, confidence_score=0.7)
+            assert entity is not None
+            return self._parsed_from_fallback(entity, dialect)
         issues: list[ParseIssue] = []
         entities: list[ParsedEntity] = []
         all_ctes: list[ParsedCTE] = []
@@ -228,10 +261,19 @@ class SQLParser:
         occurrences: dict[str, list[str]] = {}
         statements = self._split_fallback_statements(sql)
         try:
-            expressions = list(sqlglot.parse(sql, read=dialect))
+            with self._quiet_sqlglot_warnings():
+                expressions = list(sqlglot.parse(sql, read=dialect))
         except Exception as error:
             expressions = [None] * len(statements)
-            issues.append(ParseIssue("PARSE-001", str(error), parse_mode="ast", severity="error"))
+            issues.append(
+                ParseIssue(
+                    "PARSE-001",
+                    "AST parsing failed; structural fallback was used.",
+                    parse_mode="ast",
+                    severity="warning",
+                    metadata={"exception_type": type(error).__name__},
+                )
+            )
         parsed_count = 0
         fallback_count = 0
         for index, statement in enumerate(statements):
@@ -241,28 +283,46 @@ class SQLParser:
                 fallback_count += 1
                 if entity is not None:
                     entities.append(entity)
-                    self._append_entity(entity, all_ctes, all_joins, reads, writes, dependencies, occurrences)
-                    issues.append(ParseIssue(
-                        "PARSE-002", "Regex fallback used for statement",
-                        line=entity.line_start, statement_index=index,
-                        severity="warning", parse_mode="regex_fallback",
-                    ))
+                    self._append_entity(
+                        entity, all_ctes, all_joins, reads, writes, dependencies, occurrences
+                    )
+                    issues.append(
+                        ParseIssue(
+                            "PARSE-002",
+                            "Regex fallback used for statement",
+                            line=entity.line_start,
+                            statement_index=index,
+                            severity="warning",
+                            parse_mode="regex_fallback",
+                        )
+                    )
                 continue
             parsed_count += 1
             entity = self._entity_from_expression(expression, statement, index, dialect)
             entities.append(entity)
-            self._append_entity(entity, all_ctes, all_joins, reads, writes, dependencies, occurrences)
+            self._append_entity(
+                entity, all_ctes, all_joins, reads, writes, dependencies, occurrences
+            )
         normalized = "\n".join(e.normalized_sql for e in entities if e.normalized_sql)
         return ParsedSQL(
-            entities=tuple(entities), ctes=tuple(all_ctes), joins=tuple(all_joins),
-            tables_read=tuple(reads), tables_written=tuple(writes),
+            entities=tuple(entities),
+            ctes=tuple(all_ctes),
+            joins=tuple(all_joins),
+            tables_read=tuple(reads),
+            tables_written=tuple(writes),
             dependencies=tuple(dependencies),
-            cte_occurrences=occurrences, normalized_sql=normalized or None,
-            dialect_used=dialect, issues=tuple(issues), statement_count=len(statements),
-            parsed_statement_count=parsed_count, fallback_statement_count=fallback_count,
+            cte_occurrences=occurrences,
+            normalized_sql=normalized or None,
+            dialect_used=dialect,
+            issues=tuple(issues),
+            statement_count=len(statements),
+            parsed_statement_count=parsed_count,
+            fallback_statement_count=fallback_count,
         )
 
-    def _entity_from_expression(self, node: exp.Expression, source: str, index: int, dialect: str) -> ParsedEntity:
+    def _entity_from_expression(
+        self, node: exp.Expression, source: str, index: int, dialect: str
+    ) -> ParsedEntity:
         entity_type, statement_type, name_node = self._classify(node)
         name, schema, database, alias = self._qualified_parts(name_node)
         qualified = self._qualified_name(name, schema, database)
@@ -274,24 +334,36 @@ class SQLParser:
         deps = tuple(self._table_id(t) for t in (*tables, *written)) + called
         normalized = self._sql(node, dialect)
         return ParsedEntity(
-            name=name, entity_type=entity_type, statement_type=statement_type,
-            qualified_name=qualified, schema=schema, database=database, alias=alias,
-            tables_read=tables, tables_written=written, ctes=ctes, joins=joins,
-            dependencies=deps, called_procedures=called, normalized_sql=normalized,
-            source="ast", confidence_score=1.0, line_start=self._line_start(source),
-            line_end=self._line_end(source), statement_index=index,
+            name=name,
+            entity_type=entity_type,
+            statement_type=statement_type,
+            qualified_name=qualified,
+            schema=schema,
+            database=database,
+            alias=alias,
+            tables_read=tables,
+            tables_written=written,
+            ctes=ctes,
+            joins=joins,
+            dependencies=deps,
+            called_procedures=called,
+            normalized_sql=normalized,
+            source="ast",
+            confidence_score=1.0,
+            line_start=self._line_start(source),
+            line_end=self._line_end(source),
+            statement_index=index,
         )
 
     def _classify(self, node: exp.Expression) -> tuple[str, str, exp.Expression | None]:
         kind = node.key.upper()
         if isinstance(node, (exp.Create, exp.Alter)):
             this = node.args.get("this")
-            target = getattr(this, "this", this)
-            target_kind = getattr(target, "key", "").upper()
-            if "PROCEDURE" in target_kind or "PROC" in target_kind:
-                return "procedure", f"{kind}_PROCEDURE", target
-            if "VIEW" in target_kind:
-                return "view", f"{kind}_VIEW", target
+            target_kind = str(node.args.get("kind") or "").upper()
+            if target_kind in {"PROCEDURE", "PROC"}:
+                return "procedure", f"{kind}_PROCEDURE", this
+            if target_kind == "VIEW":
+                return "view", f"{kind}_VIEW", this
         return "sql_script", kind, None
 
     def _tables(self, node: exp.Expression, operation: str, dialect: str) -> list[ParsedTable]:
@@ -299,7 +371,12 @@ class SQLParser:
 
     def _write_tables(self, node: exp.Expression, dialect: str) -> list[ParsedTable]:
         result: list[ParsedTable] = []
-        for cls, operation in ((exp.Insert, "insert"), (exp.Update, "update"), (exp.Delete, "delete"), (exp.Merge, "merge")):
+        for cls, operation in (
+            (exp.Insert, "insert"),
+            (exp.Update, "update"),
+            (exp.Delete, "delete"),
+            (exp.Merge, "merge"),
+        ):
             for parent in node.find_all(cls):
                 target = parent.args.get("this")
                 if isinstance(target, exp.Table):
@@ -307,14 +384,26 @@ class SQLParser:
         return result
 
     def _table(self, node: exp.Table, operation: str) -> ParsedTable:
-        return ParsedTable(name=node.name, schema=node.db, database=node.catalog, alias=node.alias_or_none, operation=operation)
+        return ParsedTable(
+            name=node.name,
+            schema=node.db,
+            database=node.catalog,
+            alias=node.alias or None,
+            operation=operation,
+        )
 
     def _ctes(self, node: exp.Expression, dialect: str) -> list[ParsedCTE]:
-        return [ParsedCTE(
-            name=cte.alias_or_name, tables=tuple(self._tables(cte.this, "read", dialect)),
-            references=tuple(t.name for t in cte.this.find_all(exp.Table) if t.name != cte.alias_or_name),
-            normalized_sql=self._sql(cte.this, dialect),
-        ) for cte in node.find_all(exp.CTE)]
+        return [
+            ParsedCTE(
+                name=cte.alias_or_name,
+                tables=tuple(self._tables(cte.this, "read", dialect)),
+                references=tuple(
+                    t.name for t in cte.this.find_all(exp.Table) if t.name != cte.alias_or_name
+                ),
+                normalized_sql=self._sql(cte.this, dialect),
+            )
+            for cte in node.find_all(exp.CTE)
+        ]
 
     def _joins(self, node: exp.Expression, dialect: str) -> list[ParsedJoin]:
         result: list[ParsedJoin] = []
@@ -323,14 +412,21 @@ class SQLParser:
             if join.args.get("method"):
                 kind = str(join.args["method"]).upper()
             right = join.this.sql(dialect=dialect) if join.this else None
-            result.append(ParsedJoin(kind, right=right, condition=self._sql(join.args.get("on"), dialect)))
+            result.append(
+                ParsedJoin(kind, right=right, condition=self._sql(join.args.get("on"), dialect))
+            )
         return result
 
     def _called_procedures(self, node: exp.Expression, source: str) -> list[str]:
         return list(dict.fromkeys(re.findall(r"(?i)\bEXEC(?:UTE)?\s+([\w\[\].]+)", source)))
 
-    def _fallback_entity(self, source: str, index: int) -> ParsedEntity | None:
-        match = re.search(r"(?is)\b(?:CREATE\s+(?:OR\s+ALTER\s+)?|ALTER\s+)(PROCEDURE|PROC|VIEW)\s+([\[\]\w.]+)", source)
+    def _fallback_entity(
+        self, source: str, index: int, *, confidence_score: float = 0.4
+    ) -> ParsedEntity | None:
+        match = re.search(
+            r"(?is)\b(?:CREATE\s+(?:OR\s+ALTER\s+)?|ALTER\s+)(PROCEDURE|PROC|VIEW)\s+([\[\]\w.]+)",
+            source,
+        )
         if match:
             kind = "procedure" if match.group(1).upper() in {"PROC", "PROCEDURE"} else "view"
             statement_type = f"CREATE_{kind.upper()}"
@@ -342,27 +438,108 @@ class SQLParser:
         qualified = self._qualified_name(name, schema, database)
         dependencies = tuple(self._table_id(table) for table in tables) + called
         return ParsedEntity(
-            name=name, entity_type=kind, statement_type=statement_type,
-            qualified_name=qualified, schema=schema, database=database,
+            name=name,
+            entity_type=kind,
+            statement_type=statement_type,
+            qualified_name=qualified,
+            schema=schema,
+            database=database,
             tables_read=tuple(table for table in tables if table.operation == "read"),
             tables_written=tuple(table for table in tables if table.operation != "read"),
-            dependencies=dependencies, called_procedures=called,
-            normalized_sql=source.strip(), source="regex_fallback", confidence_score=0.4,
-            line_start=self._line_start(source), line_end=self._line_end(source), statement_index=index,
+            dependencies=dependencies,
+            called_procedures=called,
+            normalized_sql=source.strip(),
+            source="regex_fallback",
+            confidence_score=confidence_score,
+            line_start=self._line_start(source),
+            line_end=self._line_end(source),
+            statement_index=index,
         )
+
+    def _parsed_from_fallback(self, entity: ParsedEntity, dialect: str) -> ParsedSQL:
+        """Build a complete parsed model for a structurally extracted procedure."""
+        return ParsedSQL(
+            entities=(entity,),
+            ctes=entity.ctes,
+            joins=entity.joins,
+            tables_read=entity.tables_read,
+            tables_written=entity.tables_written,
+            dependencies=entity.dependencies,
+            normalized_sql=entity.normalized_sql,
+            dialect_used=dialect,
+            statement_count=1,
+            fallback_statement_count=1,
+        )
+
+    @staticmethod
+    def _is_tsql_procedure_definition(sql: str) -> bool:
+        return bool(
+            re.search(
+                r"(?is)^\s*(?:CREATE\s+(?:OR\s+ALTER\s+)?|ALTER\s+)(?:PROCEDURE|PROC)\b",
+                sql,
+            )
+        )
+
+    @staticmethod
+    @contextmanager
+    def _quiet_sqlglot_warnings():
+        """Prevent third-party parser warnings from disclosing SQL in logs."""
+        logger = logging.getLogger("sqlglot")
+        previous_level = logger.level
+        logger.setLevel(logging.ERROR)
+        try:
+            yield
+        finally:
+            logger.setLevel(previous_level)
 
     def _fallback_tables(self, source: str) -> list[ParsedTable]:
         result: list[ParsedTable] = []
-        for match in re.finditer(r"(?i)\b(?:FROM|JOIN|INTO|UPDATE)\s+([\w\[\].]+)", source):
-            name, schema, database = self._split_name(match.group(1))
-            operation = "read" if match.group(0).upper().startswith(("FROM", "JOIN")) else "write"
-            result.append(ParsedTable(name, schema, database, operation=operation, source="regex_fallback", confidence_score=0.4))
-        return result
+        pattern = (
+            r"(?P<operation>FROM|JOIN|INSERT\s+INTO|UPDATE|DELETE\s+FROM|"
+            r"MERGE(?:\s+INTO)?)\s+(?P<table>[\w\[\].]+)"
+)
+        for match in re.finditer(pattern, source):
+            name, schema, database = self._split_name(match.group("table"))
+            keyword = match.group("operation").upper()
+            operation = {
+                "FROM": "read",
+                "JOIN": "read",
+                "INSERT INTO": "insert",
+                "UPDATE": "update",
+                "DELETE FROM": "delete",
+            }.get(keyword, "merge")
 
-    def _append_entity(self, entity: ParsedEntity, ctes: list[ParsedCTE], joins: list[ParsedJoin], reads: list[ParsedTable], writes: list[ParsedTable], dependencies: list[str], occurrences: dict[str, list[str]]) -> None:
-        ctes.extend(entity.ctes); joins.extend(entity.joins); reads.extend(entity.tables_read); writes.extend(entity.tables_written)
+            result.append(
+                ParsedTable(
+                    name,
+                    schema,
+                    database,
+                    operation=operation,
+                    source="regex_fallback",
+                    confidence_score=0.4,
+                )
+            )
+
+        return result
+    
+    def _append_entity(
+        self,
+        entity: ParsedEntity,
+        ctes: list[ParsedCTE],
+        joins: list[ParsedJoin],
+        reads: list[ParsedTable],
+        writes: list[ParsedTable],
+        dependencies: list[str],
+        occurrences: dict[str, list[str]],
+    ) -> None:
+        ctes.extend(entity.ctes)
+        joins.extend(entity.joins)
+        reads.extend(entity.tables_read)
+        writes.extend(entity.tables_written)
         dependencies.extend(entity.dependencies)
-        owner = _make_entity_id(entity.entity_type, entity.qualified_name, entity.name, entity.statement_index)
+        owner = _make_entity_id(
+            entity.entity_type, entity.qualified_name, entity.name, entity.statement_index
+        )
         for cte in entity.ctes:
             occurrences.setdefault(cte.name, []).append(_make_cte_id(owner, cte.name))
 
@@ -371,11 +548,84 @@ class SQLParser:
         return node.sql(dialect=dialect) if node is not None else None
 
     @staticmethod
-    def _qualified_parts(node: exp.Expression | None):
-        if not node:
+    # def _qualified_parts(node: exp.Expression | None):
+    #     if not node:
+    #         return None, None, None, None
+    #     name = getattr(node, "name", None) or getattr(node, "this", None)
+    #     return (
+    #         name,
+    #         getattr(node, "db", None),
+    #         getattr(node, "catalog", None),
+    #         getattr(node, "alias_or_none", None),
+    #     )
+
+    @staticmethod
+    def _qualified_parts(
+        node: exp.Expression | None,
+    ) -> tuple[
+        str | None,
+        str | None,
+        str | None,
+        str | None,
+    ]:
+        if node is None:
             return None, None, None, None
-        name = getattr(node, "name", None) or getattr(node, "this", None)
-        return name, getattr(node, "db", None), getattr(node, "catalog", None), getattr(node, "alias_or_none", None)
+
+        if isinstance(node, exp.Dot):
+            left = node.args.get("this")
+            right = node.args.get("expression")
+
+            schema = (
+                left.name
+                if isinstance(left, exp.Identifier)
+                else str(left)
+            )
+            name = (
+                right.name
+                if isinstance(right, exp.Identifier)
+                else str(right)
+            )
+
+            return name, schema, None, None
+
+        raw_name = getattr(node, "name", None) or getattr(
+            node,
+            "this",
+            None,
+        )
+
+        name = str(raw_name) if raw_name is not None else None
+        schema = getattr(node, "db", None)
+        database = getattr(node, "catalog", None)
+        alias = getattr(node, "alias_or_none", None)
+
+        if name and "." in name:
+            cleaned = (
+                name.replace('"', "")
+                .replace("[", "")
+                .replace("]", "")
+            )
+            parts = [
+                part.strip()
+                for part in cleaned.split(".")
+                if part.strip()
+            ]
+
+            if parts:
+                name = parts[-1]
+
+            if len(parts) >= 2 and not schema:
+                schema = parts[-2]
+
+            if len(parts) >= 3 and not database:
+                database = parts[-3]
+
+        return (
+            str(name) if name else None,
+            str(schema) if schema else None,
+            str(database) if database else None,
+            str(alias) if alias else None,
+        )
 
     @staticmethod
     def _qualified_name(name, schema, database):
@@ -384,7 +634,11 @@ class SQLParser:
     @staticmethod
     def _split_name(value):
         parts = [part.strip("[]") for part in value.split(".")]
-        return parts[-1], parts[-2] if len(parts) > 1 else None, parts[-3] if len(parts) > 2 else None
+        return (
+            parts[-1],
+            parts[-2] if len(parts) > 1 else None,
+            parts[-3] if len(parts) > 2 else None,
+        )
 
     @staticmethod
     def _table_id(table: ParsedTable) -> str:
@@ -408,4 +662,12 @@ class SQLParser:
         return tuple(part.strip() for part in sql.split(";") if part.strip())
 
 
-__all__ = ["ParseIssue", "ParsedCTE", "ParsedEntity", "ParsedJoin", "ParsedSQL", "ParsedTable", "SQLParser"]
+__all__ = [
+    "ParseIssue",
+    "ParsedCTE",
+    "ParsedEntity",
+    "ParsedJoin",
+    "ParsedSQL",
+    "ParsedTable",
+    "SQLParser",
+]

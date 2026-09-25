@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -7,7 +7,7 @@ from src.monitor.guardian_scout import Observation
 
 
 def observation(value: float, threshold: float = 10) -> Observation:
-    return Observation("pipeline_latency", value, threshold, datetime.now(timezone.utc))
+    return Observation("pipeline_latency", value, threshold, datetime.now(UTC))
 
 
 def test_classifies_risk_by_threshold_distance() -> None:

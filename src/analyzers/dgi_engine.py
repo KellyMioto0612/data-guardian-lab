@@ -1,8 +1,8 @@
 """Data Governance Index calculation for Guardian Objects."""
 
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Callable, Sequence
 
 from src.models.guardian_object import GuardianObject
 from src.monitor.guardian_scout import Observation
@@ -66,11 +66,7 @@ def _calculate_observation_score(observation: Observation) -> float:
     if observation.value >= 2 * observation.threshold:
         return 0.0
 
-    score = 100.0 - (
-        (observation.value - observation.threshold)
-        / observation.threshold
-        * 100.0
-    )
+    score = 100.0 - ((observation.value - observation.threshold) / observation.threshold * 100.0)
     return _clamp_score(score)
 
 
@@ -96,9 +92,7 @@ def _calculate_object_completeness(
         guardian_object.owner,
         guardian_object.domain,
     )
-    present_fields = sum(
-        _is_present(value) for value in required_fields
-    )
+    present_fields = sum(_is_present(value) for value in required_fields)
     return _clamp_score(present_fields / len(required_fields) * 100.0)
 
 
@@ -110,10 +104,7 @@ def _observation_criterion(
     return CriterionResult(
         name="observation_health",
         score=score,
-        reason=(
-            f"DG-RSN-001 observation health for "
-            f"'{observation.name}': {score:g}"
-        ),
+        reason=(f"DG-RSN-001 observation health for '{observation.name}': {score:g}"),
         weight=0.60,
     )
 
@@ -127,8 +118,7 @@ def _object_completeness_criterion(
         name="object_completeness",
         score=score,
         reason=(
-            f"DG-RSN-002 GuardianObject completeness for "
-            f"'{guardian_object.object_id}': {score:g}"
+            f"DG-RSN-002 GuardianObject completeness for '{guardian_object.object_id}': {score:g}"
         ),
         weight=0.40,
     )
@@ -150,9 +140,7 @@ def _calculate_weighted_score(
     results: Sequence[CriterionResult],
 ) -> float:
     """Combine criterion scores using their explicit weights."""
-    active_results = tuple(
-        result for result in results if result.weight > 0
-    )
+    active_results = tuple(result for result in results if result.weight > 0)
 
     if not active_results:
         raise ValueError("at least one criterion with a positive weight is required")
@@ -161,9 +149,7 @@ def _calculate_weighted_score(
         _validate_criterion(result)
 
     total_weight = sum(result.weight for result in active_results)
-    weighted_score = sum(
-        result.score * result.weight for result in active_results
-    ) / total_weight
+    weighted_score = sum(result.score * result.weight for result in active_results) / total_weight
 
     return _clamp_score(weighted_score)
 
@@ -208,8 +194,7 @@ def calculate_dgi(
         raise ValueError("at least one DGI criterion is required")
 
     criterion_results = tuple(
-        criterion(guardian_object, observation)
-        for criterion in active_criteria
+        criterion(guardian_object, observation) for criterion in active_criteria
     )
     score = _calculate_weighted_score(criterion_results)
 
@@ -218,7 +203,5 @@ def calculate_dgi(
         observation=observation,
         score=score,
         classification=_classify(score),
-        reasons=tuple(
-            result.reason for result in criterion_results
-        ),
+        reasons=tuple(result.reason for result in criterion_results),
     )
